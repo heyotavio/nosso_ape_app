@@ -39,6 +39,8 @@
 <div class="overlay hide" id="apiModal"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="apiModalTitle">
   <div class="dialog-head"><h2 id="apiModalTitle">Conectar ao Nosso Apê</h2><button class="close" id="apiCancel" aria-label="Fechar">×</button></div>
   <p class="intro">Entre com um dos usuários cadastrados. No GitHub Pages, informe o endereço HTTPS da API. O acesso remoto deve estar protegido.</p>
+  <p class="footnote" id="accessHelp">Se estiver no site público, primeiro autentique-se no Cloudflare Access. Abra a API em outra aba, conclua o login e volte aqui para conectar.</p>
+  <p><button type="button" class="btn" id="cloudflareLogin">🔐 Entrar no Cloudflare Access (nova aba)</button></p>
   <form id="apiForm"><div class="formgrid">
     <div class="field wide"><label for="apiBase">Endereço da API</label><input type="url" id="apiBase" value="https://api.otavioaraujo.com.br" required autocomplete="url"></div>
     <div class="field wide"><label for="apiEmail">Email</label><input type="email" id="apiEmail" required autocomplete="username"></div>
@@ -168,6 +170,7 @@ function scheduleRemoteSave(){
 async function apiRequest(path,options={}){
   const resp=await fetch(remote.base+path,{
     ...options,
+    credentials:'include',
     headers:{'Authorization':'Bearer '+remote.token,'Content-Type':'application/json',...(options.headers||{})}
   });
   let result=null;
@@ -230,6 +233,7 @@ async function refreshRemote(manual=false){
 }
 function closeApiModal(){el('apiModal').classList.add('hide');el('apiPassword').value='';}
 el('apiConnect').addEventListener('click',()=>el('apiModal').classList.remove('hide'));
+el('cloudflareLogin').addEventListener('click',()=>{const base=el('apiBase').value.trim().replace(/\/+$/,'');if(!/^https:\/\//i.test(base)){toast('Para o acesso remoto, informe a URL HTTPS da API.',true);return;}window.open(base+'/health','_blank','noopener,noreferrer');});
 el('apiCancel').addEventListener('click',closeApiModal);
 el('apiCancel2').addEventListener('click',closeApiModal);
 el('apiModal').addEventListener('click',e=>{if(e.target===el('apiModal'))closeApiModal();});
@@ -240,7 +244,7 @@ el('apiForm').addEventListener('submit',async e=>{
   if(location.protocol==='https:'&&base.startsWith('http:')){toast('Um site HTTPS precisa de uma API HTTPS. Use o ambiente local agora.',true);return;}
   const button=el('apiSubmit');button.disabled=true;button.textContent='Conectando...';
   try{
-    const res=await fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:el('apiEmail').value.trim(),senha:el('apiPassword').value})});
+    const res=await fetch(base+'/api/auth/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:el('apiEmail').value.trim(),senha:el('apiPassword').value})});
     const auth=await res.json().catch(()=>({}));
     if(!res.ok)throw Error(auth.detail||'Falha de autenticação');
     remote.base=base;remote.token=auth.access_token;
@@ -257,7 +261,7 @@ el('apiForm').addEventListener('submit',async e=>{
     if(!state.categories.length&&!state.expenses.length&&!previous.demo&&(previous.categories.length||previous.expenses.length)&&confirm('O banco está vazio. Deseja enviar os dados locais que você já cadastrou?')){
       data=previous;data.demo=false;render();
     }
-  }catch(err){remote.enabled=false;remote.token='';remote.base='';toast('Não foi possível conectar: '+err.message,true);}
+  }catch(err){remote.enabled=false;remote.token='';remote.base='';const hint=base.startsWith('https:')?' Se usa Cloudflare Access, entre primeiro pelo botão acima e verifique CORS/OPTIONS na Cloudflare.':'';toast('Não foi possível conectar: '+err.message+'.'+hint,true);}
   finally{button.disabled=false;button.textContent='Conectar e sincronizar';}
 });
 el('apiRefresh').addEventListener('click',()=>refreshRemote(true));
