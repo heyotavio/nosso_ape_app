@@ -39,8 +39,6 @@
 <div class="overlay hide" id="apiModal"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="apiModalTitle">
   <div class="dialog-head"><h2 id="apiModalTitle">Conectar ao Nosso Apê</h2><button class="close" id="apiCancel" aria-label="Fechar">×</button></div>
   <p class="intro">Entre com um dos usuários cadastrados. No GitHub Pages, informe o endereço HTTPS da API. O acesso remoto deve estar protegido.</p>
-  <p class="footnote" id="accessHelp">Se estiver no site público, primeiro autentique-se no Cloudflare Access. Abra a API em outra aba, conclua o login e volte aqui para conectar.</p>
-  <p><button type="button" class="btn" id="cloudflareLogin">🔐 Entrar no Cloudflare Access (nova aba)</button></p>
   <form id="apiForm"><div class="formgrid">
     <div class="field wide"><label for="apiBase">Endereço da API</label><input type="url" id="apiBase" value="https://api.otavioaraujo.com.br" required autocomplete="url"></div>
     <div class="field wide"><label for="apiEmail">Email</label><input type="email" id="apiEmail" required autocomplete="username"></div>
@@ -75,6 +73,9 @@ function sanitize(obj){
 let data;try{const raw=localStorage.getItem(STORAGE_KEY);data=raw?sanitize(JSON.parse(raw)):sample();}catch(e){data=sample();}
 let editing=null, currentSection='resumo', toastTimer=null, importedExcel=null,pdfResult=null;
  const remote={enabled:false,base:'',token:'',version:0,snapshot:'',syncing:false,conflict:false,timer:null};
+// Modo sem login: para funcionar na internet, PUBLIC_NO_AUTH=true na FastAPI e Access desligado para a API.
+const OPEN_MODE=true;
+const OPEN_API_BASE=location.hostname==='127.0.0.1'||location.hostname==='localhost'?'http://127.0.0.1:8000':'https://api.otavioaraujo.com.br';
 let previousLocalData=null;
 const el=id=>document.getElementById(id);
 function save(){if(remote.enabled){scheduleRemoteSave();return;}try{localStorage.setItem(STORAGE_KEY,JSON.stringify(data));el('saveLabel').textContent='Salvo neste navegador';}catch(e){toast('Não foi possível salvar. Exporte um backup para preservar os dados.',true);}}
@@ -170,8 +171,7 @@ function scheduleRemoteSave(){
 async function apiRequest(path,options={}){
   const resp=await fetch(remote.base+path,{
     ...options,
-    credentials:'include',
-    headers:{'Authorization':'Bearer '+remote.token,'Content-Type':'application/json',...(options.headers||{})}
+    headers:{...(OPEN_MODE?{}:{'Authorization':'Bearer '+remote.token}),'Content-Type':'application/json',...(options.headers||{})}
   });
   let result=null;
   try{result=await resp.json();}catch(_){/* ex.: DELETE 204 */}
@@ -231,9 +231,32 @@ async function refreshRemote(manual=false){
     }
   }catch(err){if(manual)toast('Erro na atualização: '+err.message,true);}
 }
+async function connectOpenMode(){
+  if(remote.enabled)return;
+  const base=OPEN_API_BASE;
+  try{
+    // A rota /api/estado precisa estar liberada na API explicitamente pelo .env.
+    const response=await fetch(base+'/api/estado', {headers:{'Accept':'application/json'}});
+    if(!response.ok)throw Error('HTTP '+response.status+' ao consultar PostgreSQL');
+    const state=await response.json();
+    remote.base=base;remote.token='';
+    previousLocalData=structuredClone(data);
+    remote.enabled=true;
+    el('apiConnect').classList.add('hide');
+    el('apiRefresh').classList.remove('hide');
+    el('apiDisconnect').classList.add('hide');
+    el('syncHeading').textContent='☁ PostgreSQL sincronizado';
+    el('syncDescription').textContent='Modo aberto: qualquer pessoa com o link da API pode alterar os dados.';
+    applyRemoteState(state);
+    toast('Conectado automaticamente ao PostgreSQL.');
+  }catch(err){
+    el('syncHeading').textContent='⚠ Sem conexão com API';
+    el('syncDescription').textContent='Verifique FastAPI, Cloudflare Access e PUBLIC_NO_AUTH=true.';
+    toast('Sem conexão ao PostgreSQL: '+err.message,true);
+  }
+}
 function closeApiModal(){el('apiModal').classList.add('hide');el('apiPassword').value='';}
-el('apiConnect').addEventListener('click',()=>el('apiModal').classList.remove('hide'));
-el('cloudflareLogin').addEventListener('click',()=>{const base=el('apiBase').value.trim().replace(/\/+$/,'');if(!/^https:\/\//i.test(base)){toast('Para o acesso remoto, informe a URL HTTPS da API.',true);return;}window.open(base+'/health','_blank','noopener,noreferrer');});
+el('apiConnect').addEventListener('click',()=>OPEN_MODE?connectOpenMode():el('apiModal').classList.remove('hide'));
 el('apiCancel').addEventListener('click',closeApiModal);
 el('apiCancel2').addEventListener('click',closeApiModal);
 el('apiModal').addEventListener('click',e=>{if(e.target===el('apiModal'))closeApiModal();});
@@ -244,7 +267,7 @@ el('apiForm').addEventListener('submit',async e=>{
   if(location.protocol==='https:'&&base.startsWith('http:')){toast('Um site HTTPS precisa de uma API HTTPS. Use o ambiente local agora.',true);return;}
   const button=el('apiSubmit');button.disabled=true;button.textContent='Conectando...';
   try{
-    const res=await fetch(base+'/api/auth/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:el('apiEmail').value.trim(),senha:el('apiPassword').value})});
+    const res=await fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:el('apiEmail').value.trim(),senha:el('apiPassword').value})});
     const auth=await res.json().catch(()=>({}));
     if(!res.ok)throw Error(auth.detail||'Falha de autenticação');
     remote.base=base;remote.token=auth.access_token;
@@ -261,7 +284,7 @@ el('apiForm').addEventListener('submit',async e=>{
     if(!state.categories.length&&!state.expenses.length&&!previous.demo&&(previous.categories.length||previous.expenses.length)&&confirm('O banco está vazio. Deseja enviar os dados locais que você já cadastrou?')){
       data=previous;data.demo=false;render();
     }
-  }catch(err){remote.enabled=false;remote.token='';remote.base='';const hint=base.startsWith('https:')?' Se usa Cloudflare Access, entre primeiro pelo botão acima e verifique CORS/OPTIONS na Cloudflare.':'';toast('Não foi possível conectar: '+err.message+'.'+hint,true);}
+  }catch(err){remote.enabled=false;remote.token='';remote.base='';toast('Não foi possível conectar: '+err.message,true);}
   finally{button.disabled=false;button.textContent='Conectar e sincronizar';}
 });
 el('apiRefresh').addEventListener('click',()=>refreshRemote(true));
@@ -277,6 +300,12 @@ el('apiDisconnect').addEventListener('click',()=>{
 setInterval(()=>{if(remote.enabled&&!remote.conflict)refreshRemote(false);},15000);
 
 render();
+if(OPEN_MODE){
+  el('apiConnect').textContent='↻ Reconectar ao PostgreSQL';
+  el('syncHeading').textContent='⏳ Conectando ao PostgreSQL';
+  el('syncDescription').textContent='Conexão automática sem login.';
+  connectOpenMode();
+}
 })();
 </script>
 </body></html>
