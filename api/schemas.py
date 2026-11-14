@@ -1,7 +1,7 @@
 from datetime import date as DateType
 from decimal import Decimal
 from typing import Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Money = Decimal
 Status = Literal['Cotado', 'Aprovado', 'Recusado', 'Pago']
@@ -39,6 +39,25 @@ class ExpenseInput(BaseModel):
     supplier: str = Field(default='', max_length=300)
     notes: str = Field(default='', max_length=10000)
     source: str = Field(default='', max_length=500)
+    product_url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator('product_url')
+    @classmethod
+    def validate_product_url(cls, value):
+        if not value or not value.strip():
+            return None
+        from urllib.parse import urlsplit
+        url = value.strip()
+        parts = urlsplit(url)
+        if parts.scheme not in ('http', 'https') or not parts.hostname or parts.username or parts.password:
+            raise ValueError('Informe um link HTTP ou HTTPS valido')
+        return url
+
+    @model_validator(mode='after')
+    def check_payment(self):
+        if self.payment_method == 'parcelado' and (self.installment_total is None or self.installment_total <= 0):
+            raise ValueError('Valor total a prazo obrigatorio para pagamento parcelado')
+        return self
 
     @field_validator('description', 'category')
     @classmethod

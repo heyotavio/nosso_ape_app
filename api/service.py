@@ -42,10 +42,10 @@ def installment_to_dict(i: Installment):
 def expense_to_dict(e: Expense):
     return {'id': e.id, 'description': e.description, 'supplier': e.supplier,
             'category': e.category.name, 'amount': float(e.amount), 'status': e.status,
-            'date': e.date.isoformat(), 'notes': e.notes, 'source': e.source,
+            'date': e.date.isoformat(), 'notes': e.notes, 'source': e.source, 'product_url': e.product_url,
             'item_name': e.item_name or e.description,
             'cash_price': float(e.cash_price) if e.cash_price is not None else float(e.amount),
-            'installment_total': float(e.installment_total) if e.installment_total is not None else float(e.amount),
+            'installment_total': float(e.installment_total) if e.installment_total is not None else None,
             'payment_method': e.payment_method, 'installments_count': e.installments_count,
             'first_due_date': e.first_due_date.isoformat() if e.first_due_date else None,
             'installments': [installment_to_dict(i) for i in e.installments]}
@@ -70,9 +70,10 @@ def apply_expense(e: Expense, item: ExpenseInput, category: Category):
     e.date = item.date
     e.notes = item.notes
     e.source = item.source
+    e.product_url = item.product_url
     e.item_name = item.item_name.strip() or item.description
     e.cash_price = item.cash_price if item.cash_price is not None else item.amount
-    e.installment_total = item.installment_total if item.installment_total is not None else item.amount
+    e.installment_total = item.installment_total if item.installment_total is not None else (item.amount if item.payment_method == 'parcelado' else None)
     e.payment_method = item.payment_method
     e.installments_count = item.installments_count if item.payment_method == 'parcelado' else 1
     e.first_due_date = item.first_due_date

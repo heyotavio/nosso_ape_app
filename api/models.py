@@ -37,6 +37,7 @@ class Expense(Base):
     date: Mapped[date] = mapped_column(Date, default=date.today, nullable=False)
     notes: Mapped[str] = mapped_column(Text, default='', nullable=False)
     source: Mapped[str] = mapped_column(String(500), default='', nullable=False)
+    product_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey('usuarios.id'), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
